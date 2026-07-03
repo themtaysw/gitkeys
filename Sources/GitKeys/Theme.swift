@@ -319,6 +319,7 @@ struct StatusBanner: View {
             Text(text)
                 .font(.callout.weight(.medium))
                 .foregroundStyle(.primary)
+                .textSelection(.enabled)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)

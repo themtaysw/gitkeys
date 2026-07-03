@@ -47,13 +47,21 @@ Or open `Package.swift` in Xcode and hit ⌘R.
 
 ## Download / build the app
 
+**Homebrew** (tap goes live with v0.2.0):
+
+```sh
+brew tap themtaysw/gitkeys && brew install --cask gitkeys
+```
+
 **Download**: grab `GitKeys.zip` from the
 [latest release](https://github.com/themtaysw/gitkeys/releases/latest), unzip, and drag
-`GitKeys.app` to Applications.
+`GitKeys.app` to Applications. Releases are built automatically by GitHub Actions
+whenever a version tag (`v*`) is pushed.
 
 > **First launch**: GitKeys is open source and not notarized by Apple (no $99/yr
 > developer account), so macOS will warn you on first open. **Right-click the app →
-> Open → Open** once; after that it launches normally.
+> Open → Open** once; after that it launches normally. (With Homebrew you can skip
+> the warning via `brew install --cask --no-quarantine gitkeys`.)
 
 **Build it yourself**: `swift run` launches the binary directly (handy for dev). To
 build a proper, double-clickable app bundle:

@@ -15,12 +15,19 @@ struct WizardView: View {
 
     @State private var applyBusy = false
     @State private var testBusy = false
+    @State private var uploadBusy = false
     @State private var status: String?
     @State private var statusError = false
     @State private var pubKeyToShow = ""
     @State private var testOutput = ""
 
-    private var anyBusy: Bool { applyBusy || testBusy }
+    // Step 4 — key upload. The token lives only in this field and the macOS
+    // Keychain; it is never logged or written anywhere else.
+    @State private var token = ""
+    @State private var rememberToken = true
+    @State private var uploadSucceeded = false
+
+    private var anyBusy: Bool { applyBusy || testBusy || uploadBusy }
 
     private var connectionSucceeded: Bool {
         testOutput.lowercased().contains("welcome")
@@ -115,7 +122,33 @@ struct WizardView: View {
                     }
                 }
 
-                stepCard(4, "Test the connection", done: connectionSucceeded) {
+                stepCard(4, "Upload the key to your host (optional)", done: uploadSucceeded) {
+                    LabeledContent("Access token") {
+                        SecureField("Personal access token", text: $token)
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    Toggle("Remember in Keychain", isOn: $rememberToken)
+
+                    Button {
+                        Task { await upload() }
+                    } label: {
+                        GKBusyLabel(isBusy: uploadBusy) {
+                            Text("Upload public key")
+                        }
+                    }
+                    .buttonStyle(.gkPrimary)
+                    .disabled(anyBusy
+                              || pubKeyToShow.isEmpty
+                              || token.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                    Text(tokenCaption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                stepCard(5, "Test the connection", done: connectionSucceeded) {
                     Button {
                         Task { await test() }
                     } label: {
@@ -144,12 +177,42 @@ struct WizardView: View {
             .animation(GK.spring, value: pubKeyToShow)
             .animation(GK.spring, value: testOutput)
             .animation(GK.spring, value: useExisting)
+            .animation(GK.spring, value: uploadSucceeded)
         }
         .onAppear {
             keyService.reload()
             if selectedKeyPath.isEmpty {
                 let preferred = keyService.keys.first { $0.name == "id_ed25519" } ?? keyService.keys.first
                 selectedKeyPath = preferred?.path ?? ""
+            }
+            prefillTokenFromKeychain()
+        }
+    }
+
+    // MARK: - Token helpers
+
+    private var tokenCaption: String {
+        let cleanedHost = host.trimmingCharacters(in: .whitespaces)
+        let hostLabel = cleanedHost.isEmpty ? "your GitLab host" : cleanedHost
+        let create: String
+        switch HostKind.detect(from: cleanedHost) {
+        case .github:
+            create = "Create a token on GitHub under Settings > Developer settings > Personal access tokens, with the admin:public_key scope."
+        case .gitlab:
+            create = "Create a token on \(hostLabel) under Preferences > Access Tokens, with the api scope."
+        }
+        return create + " The token is stored only in the macOS Keychain."
+    }
+
+    /// Prefills the token field from the Keychain (off the main thread).
+    private func prefillTokenFromKeychain() {
+        guard token.isEmpty else { return }
+        let cleanedHost = host.trimmingCharacters(in: .whitespaces)
+        guard !cleanedHost.isEmpty else { return }
+        Task {
+            let stored = await Task.detached { TokenStore.load(host: cleanedHost) }.value
+            if let stored, !stored.isEmpty, token.isEmpty {
+                token = stored
             }
         }
     }
@@ -249,17 +312,65 @@ struct WizardView: View {
         }
     }
 
+    private func upload() async {
+        uploadBusy = true
+        status = nil
+        statusError = false
+
+        let cleanedHost = host.trimmingCharacters(in: .whitespaces)
+        let tokenValue = token
+        let remember = rememberToken
+        let publicKey = pubKeyToShow
+
+        // Comment is the third field of the public-key line, when present.
+        let parts = publicKey.split(separator: " ", maxSplits: 2).map(String.init)
+        let comment = parts.count > 2 ? parts[2] : ""
+
+        // Keychain access and the computer-name lookup stay off the main thread.
+        let title = await Task.detached { () -> String in
+            if remember {
+                TokenStore.save(host: cleanedHost, token: tokenValue)
+            } else {
+                TokenStore.delete(host: cleanedHost)
+            }
+            return HostAPIClient.defaultTitle(keyComment: comment)
+        }.value
+
+        let result = await HostAPIClient.uploadKey(
+            host: cleanedHost, token: tokenValue, title: title, publicKey: publicKey
+        )
+
+        uploadBusy = false
+        status = result.message
+        statusError = !result.ok
+        if result.ok {
+            uploadSucceeded = true
+        }
+    }
+
     private func test() async {
         testBusy = true
         testOutput = ""
         let cleanedHost = host.trimmingCharacters(in: .whitespaces)
-        let cleanedUser = user.trimmingCharacters(in: .whitespaces).isEmpty ? "git" : user
+        let trimmedUser = user.trimmingCharacters(in: .whitespaces)
+        let cleanedUser = trimmedUser.isEmpty ? "git" : trimmedUser
+
+        // A leading "-" would let ssh parse the destination as an option
+        // (e.g. -oProxyCommand=… runs an arbitrary command) — reject it and
+        // terminate option parsing with "--" before the destination.
+        guard !cleanedUser.hasPrefix("-"), !cleanedHost.hasPrefix("-") else {
+            testBusy = false
+            status = "The SSH user and host must not start with “-”."
+            statusError = true
+            return
+        }
         let target = "\(cleanedUser)@\(cleanedHost)"
 
         let result = await Task.detached {
             Shell.run("ssh", ["-T",
                               "-o", "StrictHostKeyChecking=accept-new",
                               "-o", "BatchMode=yes",
+                              "--",
                               target])
         }.value
         testBusy = false

@@ -2,18 +2,22 @@ import SwiftUI
 
 enum Panel: String, CaseIterable, Identifiable, Hashable {
     case wizard   = "Connect a Git host"
+    case doctor   = "Doctor"
     case sshConfig = "SSH Config"
     case sshKeys  = "SSH Keys"
     case gpg      = "GPG & Signing"
+    case identities = "Identities"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
         case .wizard:    return "wand.and.stars"
+        case .doctor:    return "stethoscope"
         case .sshConfig: return "doc.text"
         case .sshKeys:   return "key"
         case .gpg:       return "signature"
+        case .identities: return "person.2"
         }
     }
 
@@ -21,9 +25,11 @@ enum Panel: String, CaseIterable, Identifiable, Hashable {
     var tint: Color {
         switch self {
         case .wizard:    return GK.accentColor
+        case .doctor:    return .green
         case .sshConfig: return .blue
         case .sshKeys:   return .teal
         case .gpg:       return .purple
+        case .identities: return .orange
         }
     }
 }
@@ -56,9 +62,11 @@ struct ContentView: View {
                 Group {
                     switch selection ?? .wizard {
                     case .wizard:    WizardView()
+                    case .doctor:    DoctorView()
                     case .sshConfig: SSHConfigView()
                     case .sshKeys:   SSHKeysView()
                     case .gpg:       GPGView()
+                    case .identities: IdentitiesView()
                     }
                 }
             }

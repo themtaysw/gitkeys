@@ -13,15 +13,18 @@ cd "${REPO_ROOT}"
 
 APP_NAME="GitKeys"
 BUNDLE_ID="com.matej.gitkeys"
-VERSION="0.1.0"
+VERSION="${VERSION:-0.2.0}"
 DIST_DIR="${REPO_ROOT}/dist"
 APP_DIR="${DIST_DIR}/${APP_NAME}.app"
 ICNS_SRC="${REPO_ROOT}/Assets/AppIcon.icns"
 
-echo "==> Building ${APP_NAME} (release)"
-swift build -c release
+# Build a universal (arm64 + x86_64) binary so the released app runs on
+# Intel Macs too — CI builds on Apple Silicon runners, and an arm64-only
+# Mach-O cannot launch on x86_64 at all (Rosetta does not apply).
+echo "==> Building ${APP_NAME} (release, universal)"
+swift build -c release --arch arm64 --arch x86_64
 
-BIN_PATH="$(swift build -c release --show-bin-path)/${APP_NAME}"
+BIN_PATH="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/${APP_NAME}"
 if [[ ! -x "${BIN_PATH}" ]]; then
     echo "error: release binary not found at ${BIN_PATH}" >&2
     exit 1
@@ -55,6 +58,8 @@ cat > "${APP_DIR}/Contents/Info.plist" <<PLIST
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
+	<string>${VERSION}</string>
+	<key>CFBundleVersion</key>
 	<string>${VERSION}</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>

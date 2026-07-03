@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish GitKeys.app
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build app bundle
+        run: VERSION="${GITHUB_REF_NAME#v}" ./scripts/build-app.sh
+
+      - name: Zip app bundle
+        run: ditto -c -k --keepParent dist/GitKeys.app dist/GitKeys.zip
+
+      - name: Compute SHA-256
+        run: |
+          shasum -a 256 dist/GitKeys.zip | tee dist/GitKeys.zip.sha256
+          {
+            echo '### GitKeys.zip SHA-256'
+            echo '```'
+            cat dist/GitKeys.zip.sha256
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/GitKeys.zip dist/GitKeys.zip.sha256 \
+            --title "GitKeys $GITHUB_REF_NAME" --generate-notes \
+          || gh release upload "$GITHUB_REF_NAME" dist/GitKeys.zip dist/GitKeys.zip.sha256 --clobber
