@@ -11,8 +11,6 @@ final class SSHConfigStore: ObservableObject {
     let sshDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh")
     var configURL: URL { sshDir.appendingPathComponent("config") }
 
-    init() { load() }
-
     // MARK: - Loading
 
     func load() {

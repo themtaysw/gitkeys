@@ -39,16 +39,20 @@ struct GPGView: View {
                                     }
                                     Spacer()
                                     Button {
-                                        exported = gpg.exportPublic(key)
-                                        flash("Exported public key for \(key.keyID)")
+                                        Task {
+                                            exported = await gpg.exportPublic(key)
+                                            flash("Exported public key for \(key.keyID)")
+                                        }
                                     } label: {
                                         Label("Export", systemImage: "square.and.arrow.up")
                                     }
                                     Button {
-                                        let result = gpg.configureGitSigning(key)
-                                        flash(result.ok
-                                              ? "git will now sign commits with \(key.keyID)"
-                                              : result.combinedOutput, error: !result.ok)
+                                        Task {
+                                            let result = await gpg.configureGitSigning(key)
+                                            flash(result.ok
+                                                  ? "git will now sign commits with \(key.keyID)"
+                                                  : result.combinedOutput, error: !result.ok)
+                                        }
                                     } label: {
                                         Label("Use for signing", systemImage: "signature")
                                     }
@@ -103,7 +107,7 @@ struct GPGView: View {
             }
             .padding(24)
         }
-        .onAppear { gpg.reload() }
+        .task { await gpg.reload() }
     }
 
     private func create() async {

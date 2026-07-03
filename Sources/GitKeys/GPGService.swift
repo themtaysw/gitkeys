@@ -13,17 +13,19 @@ final class GPGService: ObservableObject {
     @Published var keys: [GPGKey] = []
     @Published var available: Bool = true
 
-    init() { reload() }
-
-    func reload() {
-        guard Shell.which("gpg") != nil else {
-            available = false
+    /// Subprocess work runs off the main thread; only the published results are
+    /// assigned back on the main actor.
+    func reload() async {
+        let available = await Task.detached { Shell.which("gpg") != nil }.value
+        self.available = available
+        guard available else {
             keys = []
             return
         }
-        available = true
-        let result = Shell.run("gpg", ["--list-secret-keys", "--keyid-format=long", "--with-colons"])
-        keys = Self.parseColons(result.stdout)
+        let output = await Task.detached {
+            Shell.run("gpg", ["--list-secret-keys", "--keyid-format=long", "--with-colons"]).stdout
+        }.value
+        keys = Self.parseColons(output)
     }
 
     static func parseColons(_ output: String) -> [GPGKey] {
@@ -74,23 +76,29 @@ final class GPGService: ObservableObject {
         let result = await Task.detached {
             Shell.run("gpg", ["--batch", "--gen-key"], input: input)
         }.value
-        reload()
+        await reload()
         return result
     }
 
-    func exportPublic(_ key: GPGKey) -> String {
-        let result = Shell.run("gpg", ["--armor", "--export", key.keyID])
+    func exportPublic(_ key: GPGKey) async -> String {
+        let keyID = key.keyID
+        let result = await Task.detached {
+            Shell.run("gpg", ["--armor", "--export", keyID])
+        }.value
         return result.ok ? result.stdout.trimmingCharacters(in: .whitespacesAndNewlines) : result.combinedOutput
     }
 
     /// Points global git config at this key for signed commits and tags.
-    func configureGitSigning(_ key: GPGKey) -> CommandResult {
-        _ = Shell.run("git", ["config", "--global", "user.signingkey", key.keyID])
-        _ = Shell.run("git", ["config", "--global", "commit.gpgsign", "true"])
-        _ = Shell.run("git", ["config", "--global", "tag.gpgsign", "true"])
-        if let gpgPath = Shell.which("gpg") {
-            _ = Shell.run("git", ["config", "--global", "gpg.program", gpgPath])
-        }
-        return Shell.run("git", ["config", "--global", "--get", "user.signingkey"])
+    func configureGitSigning(_ key: GPGKey) async -> CommandResult {
+        let keyID = key.keyID
+        return await Task.detached {
+            _ = Shell.run("git", ["config", "--global", "user.signingkey", keyID])
+            _ = Shell.run("git", ["config", "--global", "commit.gpgsign", "true"])
+            _ = Shell.run("git", ["config", "--global", "tag.gpgsign", "true"])
+            if let gpgPath = Shell.which("gpg") {
+                _ = Shell.run("git", ["config", "--global", "gpg.program", gpgPath])
+            }
+            return Shell.run("git", ["config", "--global", "--get", "user.signingkey"])
+        }.value
     }
 }

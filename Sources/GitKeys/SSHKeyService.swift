@@ -17,8 +17,6 @@ final class SSHKeyService: ObservableObject {
 
     let sshDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh")
 
-    init() { reload() }
-
     /// Scans ~/.ssh for `.pub` files. Only public keys are ever read — private
     /// key contents are never opened or displayed.
     func reload() {

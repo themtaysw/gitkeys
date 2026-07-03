@@ -32,7 +32,6 @@ struct ContentView: View {
                     Label(panel.rawValue, systemImage: panel.icon).tag(panel)
                 }
             }
-            .frame(minWidth: 210)
             .navigationTitle("GitKeys")
         } detail: {
             Group {
@@ -43,10 +42,17 @@ struct ContentView: View {
                 case .gpg:       GPGView()
                 }
             }
-            .frame(minWidth: 560, minHeight: 520)
         }
         .environmentObject(configStore)
         .environmentObject(keyService)
         .environmentObject(gpgService)
+        // Load everything AFTER first render. Blocking file/subprocess work inside a
+        // @StateObject init runs during the SwiftUI render pass and crashes AttributeGraph,
+        // so all initial loading happens here instead.
+        .task {
+            configStore.load()
+            keyService.reload()
+            await gpgService.reload()
+        }
     }
 }
