@@ -65,4 +65,6 @@ one-command `.app` build are welcome.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+AGPL-3.0 — see [LICENSE](LICENSE). You're free to use, modify, and share GitKeys;
+any distributed or network-served modification must stay open source under the
+same license.
