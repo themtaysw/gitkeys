@@ -13,22 +13,32 @@ struct WizardView: View {
     @State private var newKeyComment = ""
     @State private var passphrase = ""
 
-    @State private var busy = false
+    @State private var applyBusy = false
+    @State private var testBusy = false
     @State private var status: String?
     @State private var statusError = false
     @State private var pubKeyToShow = ""
     @State private var testOutput = ""
 
+    private var anyBusy: Bool { applyBusy || testBusy }
+
+    private var connectionSucceeded: Bool {
+        testOutput.lowercased().contains("welcome")
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Connect a Git host").font(.largeTitle.bold())
+                    Text("Connect a Git host")
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
                     Text("Set up SSH access to a self-hosted GitLab / GitHub / Gitea end-to-end.")
                         .foregroundStyle(.secondary)
                 }
+                .padding(.bottom, 4)
 
-                step(1, "Where are you connecting?") {
+                stepCard(1, "Where are you connecting?",
+                         done: !host.trimmingCharacters(in: .whitespaces).isEmpty) {
                     LabeledContent("Host") {
                         TextField("gitlab.spendee.com", text: $host).textFieldStyle(.roundedBorder)
                     }
@@ -37,7 +47,7 @@ struct WizardView: View {
                     }
                 }
 
-                step(2, "Choose a key") {
+                stepCard(2, "Choose a key") {
                     Picker("Key source", selection: $useExisting) {
                         Text("Use an existing key").tag(true)
                         Text("Generate a new key").tag(false)
@@ -47,8 +57,10 @@ struct WizardView: View {
 
                     if useExisting {
                         if keyService.keys.isEmpty {
-                            Text("No keys found — switch to \"Generate a new key\".")
-                                .foregroundStyle(.secondary)
+                            EmptyStateView(
+                                icon: "key.slash",
+                                message: "No keys found — switch to \"Generate a new key\"."
+                            )
                         } else {
                             Picker("Key", selection: $selectedKeyPath) {
                                 ForEach(keyService.keys) { key in
@@ -69,17 +81,22 @@ struct WizardView: View {
                     }
                 }
 
-                step(3, "Write SSH config & reveal the public key") {
+                stepCard(3, "Write SSH config & reveal the public key",
+                         done: !pubKeyToShow.isEmpty) {
                     Button {
                         Task { await apply() }
                     } label: {
-                        if busy { ProgressView().controlSize(.small) } else { Text("Set up key & config") }
+                        GKBusyLabel(isBusy: applyBusy) {
+                            Text("Set up key & config")
+                        }
                     }
-                    .disabled(busy || host.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .buttonStyle(.gkPrimary)
+                    .disabled(anyBusy || host.trimmingCharacters(in: .whitespaces).isEmpty)
 
                     if !pubKeyToShow.isEmpty {
                         HStack {
-                            Text("Add this public key to your Git host").font(.headline)
+                            Text("Add this public key to your Git host")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
                             Spacer()
                             Button {
                                 copyToClipboard(pubKeyToShow)
@@ -88,21 +105,26 @@ struct WizardView: View {
                             } label: {
                                 Label("Copy", systemImage: "doc.on.doc")
                             }
+                            .buttonStyle(.gkSecondary)
                             Button { openKeysPage() } label: {
                                 Label("Open host keys page", systemImage: "safari")
                             }
+                            .buttonStyle(.gkSecondary)
                         }
                         MonospacedBox(text: pubKeyToShow).frame(height: 80)
                     }
                 }
 
-                step(4, "Test the connection") {
+                stepCard(4, "Test the connection", done: connectionSucceeded) {
                     Button {
                         Task { await test() }
                     } label: {
-                        if busy { ProgressView().controlSize(.small) } else { Text("Test connection (ssh -T)") }
+                        GKBusyLabel(isBusy: testBusy) {
+                            Text("Test connection (ssh -T)")
+                        }
                     }
-                    .disabled(busy || host.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .buttonStyle(.gkPrimary)
+                    .disabled(anyBusy || host.trimmingCharacters(in: .whitespaces).isEmpty)
 
                     if !testOutput.isEmpty {
                         MonospacedBox(text: testOutput).frame(height: 80)
@@ -112,10 +134,16 @@ struct WizardView: View {
                 }
 
                 if let status {
-                    Text(status).font(.callout).foregroundStyle(statusError ? .red : .green)
+                    statusBanner(for: status)
                 }
             }
-            .padding(24)
+            .frame(maxWidth: 760, alignment: .leading)
+            .padding(GK.pagePadding)
+            .animation(GK.spring, value: status)
+            .animation(GK.spring, value: statusError)
+            .animation(GK.spring, value: pubKeyToShow)
+            .animation(GK.spring, value: testOutput)
+            .animation(GK.spring, value: useExisting)
         }
         .onAppear {
             keyService.reload()
@@ -129,25 +157,44 @@ struct WizardView: View {
     // MARK: - Step chrome
 
     @ViewBuilder
-    private func step<Content: View>(_ number: Int, _ title: String,
-                                     @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Text("\(number)")
-                    .font(.headline)
-                    .frame(width: 26, height: 26)
-                    .background(Circle().fill(Color.accentColor.opacity(0.2)))
-                Text(title).font(.title3.bold())
+    private func stepCard<Content: View>(_ number: Int, _ title: String,
+                                         done: Bool = false,
+                                         @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                StepBadge(number: number, done: done)
+                Text(title)
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
             }
-            VStack(alignment: .leading, spacing: 10) { content() }
-                .padding(.leading, 36)
+            VStack(alignment: .leading, spacing: 12) { content() }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gkCard(padding: 18)
+    }
+
+    // MARK: - Status banner
+
+    @ViewBuilder
+    private func statusBanner(for message: String) -> some View {
+        // Celebratory styling for the success moment (the 🎉 message set by test()).
+        if !statusError && message.contains("🎉") {
+            StatusBanner(text: message, isError: false)
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(GK.accentGradient, lineWidth: 1.5)
+                )
+                .shadow(color: GK.accentCyan.opacity(0.35), radius: 12, x: 0, y: 4)
+                .transition(.scale(scale: 0.9).combined(with: .opacity))
+        } else {
+            StatusBanner(text: message, isError: statusError)
         }
     }
 
     // MARK: - Actions
 
     private func apply() async {
-        busy = true
+        applyBusy = true
         status = nil
         statusError = false
 
@@ -155,7 +202,7 @@ struct WizardView: View {
 
         if useExisting {
             guard let key = keyService.keys.first(where: { $0.path == selectedKeyPath }) else {
-                busy = false
+                applyBusy = false
                 status = "Pick an existing key first."
                 statusError = true
                 return
@@ -167,7 +214,7 @@ struct WizardView: View {
                 name: newKeyName, comment: newKeyComment, passphrase: passphrase
             )
             guard result.ok else {
-                busy = false
+                applyBusy = false
                 status = result.combinedOutput.isEmpty ? "Failed to create key." : result.combinedOutput
                 statusError = true
                 return
@@ -191,7 +238,7 @@ struct WizardView: View {
         store.addOrReplaceHost(newHost)
         store.save()
 
-        busy = false
+        applyBusy = false
         if let error = store.lastError {
             status = error
             statusError = true
@@ -203,7 +250,7 @@ struct WizardView: View {
     }
 
     private func test() async {
-        busy = true
+        testBusy = true
         testOutput = ""
         let cleanedHost = host.trimmingCharacters(in: .whitespaces)
         let cleanedUser = user.trimmingCharacters(in: .whitespaces).isEmpty ? "git" : user
@@ -215,7 +262,7 @@ struct WizardView: View {
                               "-o", "BatchMode=yes",
                               target])
         }.value
-        busy = false
+        testBusy = false
 
         testOutput = result.combinedOutput.isEmpty ? "exit code \(result.exitCode)" : result.combinedOutput
         if testOutput.lowercased().contains("welcome") {

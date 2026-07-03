@@ -12,40 +12,50 @@ struct SSHKeysView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("SSH Keys").font(.largeTitle.bold())
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("SSH Keys")
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                    Text("Inspect the keys in ~/.ssh and generate new ones.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
 
-                GroupBox("Existing keys in ~/.ssh") {
+                // MARK: Existing keys
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionHeader(
+                        icon: "folder.badge.person.crop",
+                        title: "Existing keys",
+                        subtitle: "Key pairs found in ~/.ssh"
+                    )
+
                     if keyService.keys.isEmpty {
-                        Text("No SSH keys found.")
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 6)
+                        EmptyStateView(
+                            icon: "key.slash",
+                            message: "No SSH keys found in ~/.ssh.\nGenerate one below to get started."
+                        )
                     } else {
-                        VStack(spacing: 0) {
+                        VStack(spacing: 4) {
                             ForEach(keyService.keys) { key in
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(key.name).font(.headline)
-                                        Text(key.comment.isEmpty ? key.type : "\(key.type) · \(key.comment)")
-                                            .font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Button {
-                                        copyToClipboard(key.publicKey)
-                                        flash("Copied public key for \(key.name)")
-                                    } label: {
-                                        Label("Copy public key", systemImage: "doc.on.doc")
-                                    }
+                                SSHKeyRow(key: key) {
+                                    copyToClipboard(key.publicKey)
+                                    flash("Copied public key for \(key.name)")
                                 }
-                                .padding(.vertical, 6)
-                                Divider()
                             }
                         }
                     }
                 }
+                .gkCard()
 
-                GroupBox("Generate a new ed25519 key") {
+                // MARK: Generate a new key
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionHeader(
+                        icon: "plus.circle.fill",
+                        title: "Generate a new key",
+                        subtitle: "Creates a modern ed25519 key pair"
+                    )
+
                     VStack(alignment: .leading, spacing: 10) {
                         LabeledContent("File name") {
                             TextField("id_gitlab_spendee", text: $newName).textFieldStyle(.roundedBorder)
@@ -56,25 +66,34 @@ struct SSHKeysView: View {
                         LabeledContent("Passphrase") {
                             SecureField("optional — leave empty for none", text: $passphrase).textFieldStyle(.roundedBorder)
                         }
-                        HStack(spacing: 10) {
+                        HStack(spacing: 12) {
                             Button {
                                 Task { await generate() }
                             } label: {
-                                if busy { ProgressView().controlSize(.small) } else { Text("Generate key") }
+                                GKBusyLabel(isBusy: busy) {
+                                    Label("Generate key", systemImage: "sparkles")
+                                        .frame(minWidth: 88)
+                                }
                             }
+                            .buttonStyle(.gkPrimary)
                             .disabled(busy || newName.trimmingCharacters(in: .whitespaces).isEmpty)
+
                             Text("Saves to ~/.ssh/\(newName)")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
+                        .padding(.top, 4)
                     }
-                    .padding(.top, 2)
                 }
+                .gkCard()
 
                 if let message {
-                    Text(message).font(.callout).foregroundStyle(isError ? .red : .green)
+                    StatusBanner(text: message, isError: isError)
                 }
             }
-            .padding(24)
+            .padding(GK.pagePadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .animation(GK.spring, value: message)
         }
         .onAppear { keyService.reload() }
     }
@@ -96,5 +115,57 @@ struct SSHKeysView: View {
     private func flash(_ text: String, error: Bool = false) {
         message = text
         isError = error
+    }
+}
+
+// MARK: - Key row
+
+/// A single SSH key entry: gradient key tile, name + metadata, copy action.
+/// Highlights softly on hover.
+private struct SSHKeyRow: View {
+    let key: SSHKey
+    let onCopy: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(GK.accentGradient)
+                    .shadow(color: GK.accentColor.opacity(0.3), radius: 4, x: 0, y: 2)
+                Image(systemName: "key.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 30, height: 30)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(key.name)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text(key.comment.isEmpty ? key.type : "\(key.type) · \(key.comment)")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 12)
+
+            Button {
+                onCopy()
+            } label: {
+                Label("Copy public key", systemImage: "doc.on.doc")
+            }
+            .buttonStyle(.gkSecondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(hovering ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
+        )
+        .animation(.easeOut(duration: 0.15), value: hovering)
+        .onHover { hovering = $0 }
     }
 }

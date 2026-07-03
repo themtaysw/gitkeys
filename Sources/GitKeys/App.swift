@@ -11,6 +11,7 @@ struct GitKeysApp: App {
                 .frame(minWidth: 860, minHeight: 640)
         }
         .windowStyle(.titleBar)
+        .windowToolbarStyle(.unified)
     }
 }
 

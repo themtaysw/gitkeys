@@ -11,3 +11,9 @@ DerivedData/
 
 # macOS
 .DS_Store
+
+# App packaging output
+dist/
+
+# Intermediate icon assets (compiled into Assets/AppIcon.icns by scripts/generate_icon.swift)
+Assets/AppIcon.iconset/
